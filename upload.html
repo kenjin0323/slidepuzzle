@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>パズル作成 | フォトスライドパズル</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Segoe UI', Meiryo, sans-serif;
+  background: linear-gradient(160deg, #daf5ff 0%, #b8e8ff 100%);
+  color: #1e4060;
+  min-height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 32px 16px 48px;
+}
+
+.container {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+h1 {
+  font-size: 1.8rem;
+  white-space: nowrap;
+  background: linear-gradient(135deg, #0ea5e9, #06b6d4);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.subtitle { color: #5b8aa0; font-size: 0.92rem; }
+
+/* ── ステップインジケーター ── */
+.steps {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  width: 100%;
+  max-width: 340px;
+}
+.step {
+  flex: 1;
+  text-align: center;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #94a3b8;
+  padding: 7px 4px;
+  border-radius: 20px;
+  transition: background 0.2s, color 0.2s;
+}
+.step.active {
+  background: #0ea5e9;
+  color: #fff;
+}
+.step.done {
+  background: #bae6fd;
+  color: #0284c7;
+}
+.step-line {
+  width: 24px;
+  height: 2px;
+  background: #bae6fd;
+  flex-shrink: 0;
+}
+
+/* ── パネル ── */
+.panel { display: none; flex-direction: column; align-items: center; gap: 16px; width: 100%; }
+.panel.active { display: flex; }
+
+/* ── ドロップゾーン ── */
+.drop-zone {
+  width: 100%;
+  min-height: 200px;
+  border: 2px dashed #7dd3fc;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  overflow: hidden;
+}
+.drop-zone:hover, .drop-zone.dragover {
+  border-color: #0ea5e9;
+  background: rgba(14,165,233,0.05);
+}
+.drop-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 32px 24px;
+  text-align: center;
+}
+.drop-icon { font-size: 3rem; }
+.drop-hint { color: #5b8aa0; font-size: 0.85rem; }
+
+#preview-img {
+  width: 100%;
+  max-width: 340px;
+  height: 280px;
+  object-fit: cover;
+  border-radius: 14px;
+  border: 3px solid #0ea5e9;
+  box-shadow: 0 0 24px rgba(14,165,233,0.3);
+}
+
+/* ── サイズ選択 ── */
+.size-options { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.size-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 120px;
+  padding: 20px 12px;
+  background: #f0f9ff;
+  border: 2px solid #bae6fd;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+.size-btn:hover {
+  border-color: #0ea5e9;
+  background: rgba(14,165,233,0.08);
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(14,165,233,0.18);
+}
+.size-btn.selected {
+  border-color: #0ea5e9;
+  background: rgba(14,165,233,0.12);
+}
+.size-emoji { font-size: 2rem; }
+.size-label { font-size: 1.3rem; font-weight: 700; color: #0284c7; }
+.size-name  { font-size: 0.8rem; font-weight: 600; color: #1e4060; }
+.size-piece { font-size: 0.72rem; color: #5b8aa0; }
+.size-rec   {
+  font-size: 0.62rem; font-weight: 700;
+  background: linear-gradient(135deg, #0ea5e9, #06b6d4);
+  color: #fff; padding: 2px 8px; border-radius: 10px;
+}
+
+.panel-note { font-size: 0.82rem; color: #5b8aa0; }
+
+/* ── アップロード中 ── */
+.uploading-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 40px 24px;
+  background: rgba(255,255,255,0.9);
+  border-radius: 20px;
+  width: 100%;
+  border: 2px solid #bae6fd;
+}
+.uploading-spinner {
+  font-size: 2.5rem;
+  animation: spin 1.2s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── 完成 ── */
+.done-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 36px 24px;
+  background: rgba(255,255,255,0.95);
+  border: 2px solid #0ea5e9;
+  border-radius: 24px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 0 40px rgba(14,165,233,0.15);
+}
+.done-icon { font-size: 3rem; }
+.done-title { font-size: 1.3rem; font-weight: 700; color: #0284c7; }
+
+.url-box {
+  width: 100%;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 0.8rem;
+  color: #0284c7;
+  word-break: break-all;
+  text-align: left;
+  font-family: monospace;
+}
+
+.copy-result { font-size: 0.85rem; color: #34d399; min-height: 1.2em; }
+.done-note   { font-size: 0.8rem; color: #5b8aa0; line-height: 1.7; }
+
+/* ── ランキングプレビュー ── */
+.rank-preview {
+  width: 100%;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.rank-preview-head {
+  background: #e0f2fe;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #0284c7;
+}
+.rank-preview-empty {
+  padding: 12px;
+  font-size: 0.82rem;
+  color: #94a3b8;
+  text-align: center;
+}
+
+/* ── ボタン ── */
+button {
+  padding: 10px 22px;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.1s, filter 0.15s;
+  font-family: inherit;
+}
+button:hover  { filter: brightness(1.1); transform: translateY(-2px); }
+button:active { transform: translateY(0); filter: brightness(0.94); }
+.btn-primary { background: linear-gradient(135deg, #0ea5e9, #0284c7); color: #fff; }
+.btn-success { background: linear-gradient(135deg, #34d399, #059669); color: #fff; }
+.btn-dark    { background: #e0f2fe; color: #1e4060; border: 1px solid #7dd3fc; }
+.btn-line    { background: #06C755; color: #fff; }
+.btn-wide    { padding: 14px 32px; font-size: 1rem; border-radius: 28px; width: 100%; max-width: 280px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <h1>📸 パズル作成</h1>
+  <p class="subtitle">友達に解いてもらうパズルを作ろう</p>
+
+  <!-- ステップ -->
+  <div class="steps">
+    <div class="step active" id="s1">① 写真</div>
+    <div class="step-line"></div>
+    <div class="step" id="s2">② サイズ</div>
+    <div class="step-line"></div>
+    <div class="step" id="s3">③ 共有</div>
+  </div>
+
+  <!-- パネル1: 写真選択 -->
+  <div class="panel active" id="panel-1">
+    <div class="drop-zone" id="drop-zone">
+      <input type="file" id="file-input" accept="image/*" hidden>
+      <div class="drop-inner" id="drop-inner">
+        <div class="drop-icon">🖼️</div>
+        <p class="drop-hint">写真をドラッグ＆ドロップ<br>またはタップして選択</p>
+        <button type="button" class="btn-primary" id="select-btn">写真を選ぶ</button>
+      </div>
+    </div>
+    <img id="preview-img" alt="プレビュー" style="display:none">
+    <button type="button" class="btn-success btn-wide" id="next-btn" style="display:none">
+      次へ → サイズを選ぶ
+    </button>
+  </div>
+
+  <!-- パネル2: サイズ選択 -->
+  <div class="panel" id="panel-2">
+    <p style="font-weight:700;font-size:1rem">難しさを選んでください</p>
+    <p class="panel-note">相手に解いてもらう難しさです</p>
+    <div class="size-options">
+      <button type="button" class="size-btn" data-cols="3">
+        <span class="size-emoji">😊</span>
+        <span class="size-label">3 × 3</span>
+        <span class="size-name">かんたん</span>
+        <span class="size-piece">8 ピース</span>
+      </button>
+      <button type="button" class="size-btn" data-cols="4">
+        <span class="size-emoji">🧩</span>
+        <span class="size-label">4 × 4</span>
+        <span class="size-name">ふつう</span>
+        <span class="size-piece">15 ピース</span>
+        <span class="size-rec">おすすめ</span>
+      </button>
+      <button type="button" class="size-btn" data-cols="5">
+        <span class="size-emoji">🔥</span>
+        <span class="size-label">5 × 5</span>
+        <span class="size-name">むずかしい</span>
+        <span class="size-piece">24 ピース</span>
+      </button>
+    </div>
+    <button type="button" class="btn-dark" id="back-btn">← 写真を選び直す</button>
+  </div>
+
+  <!-- パネル3: アップロード・完成 -->
+  <div class="panel" id="panel-3">
+    <div class="uploading-box" id="uploading-box">
+      <div class="uploading-spinner">⏳</div>
+      <p style="font-weight:600">アップロード中...</p>
+      <p class="panel-note">しばらくお待ちください</p>
+    </div>
+    <div class="done-box" id="done-box" style="display:none">
+      <div class="done-icon">✅</div>
+      <p class="done-title">パズルリンク完成！</p>
+      <div class="url-box" id="share-url"></div>
+      <button type="button" class="btn-primary btn-wide" id="copy-btn">📋 リンクをコピー</button>
+      <p class="copy-result" id="copy-result"></p>
+      <p class="done-note">
+        このリンクを友達にLINEで送ってください<br>
+        タップするだけでパズルが始まります 🧩<br>
+        <span style="color:#94a3b8">🗓 有効期限は30日間です</span>
+      </p>
+      <button type="button" class="btn-dark btn-wide" id="restart-btn">+ 新しいパズルを作る</button>
+    </div>
+  </div>
+
+</div>
+<script>
+'use strict';
+
+firebase.initializeApp({
+  apiKey: "AIzaSyD1AdN1sZK2pQLZjmHRGJs8GZnDiawKkyc",
+  authDomain: "slidepuzzle-79e89.firebaseapp.com",
+  databaseURL: "https://slidepuzzle-79e89-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "slidepuzzle-79e89",
+  storageBucket: "slidepuzzle-79e89.firebasestorage.app",
+  messagingSenderId: "666868520258",
+  appId: "1:666868520258:web:ed88e2fbe3526400ada4db"
+});
+const db = firebase.database();
+
+const BOARD_PX = 480;
+let imageUrl = '';
+let selectedCols = 4;
+let generatedUrl = '';
+
+const $ = id => document.getElementById(id);
+
+// ── ステップ切り替え ─────────────────────────
+function goStep(n) {
+  [1,2,3].forEach(i => {
+    $('panel-' + i).classList.toggle('active', i === n);
+    const s = $('s' + i);
+    s.classList.toggle('active', i === n);
+    s.classList.toggle('done', i < n);
+  });
+}
+
+// ── 画像処理 ────────────────────────────────
+function loadImage(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = BOARD_PX;
+      const ctx = canvas.getContext('2d');
+      const dim = Math.min(img.width, img.height);
+      ctx.drawImage(img, (img.width-dim)/2, (img.height-dim)/2, dim, dim, 0, 0, BOARD_PX, BOARD_PX);
+      imageUrl = canvas.toDataURL('image/jpeg', 0.92);
+      $('preview-img').src = imageUrl;
+      $('preview-img').style.display = 'block';
+      $('drop-zone').style.display = 'none';
+      $('next-btn').style.display = 'block';
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// ── Firebase保存 ────────────────────────────
+function compress(dataUrl, callback) {
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 400;
+    canvas.getContext('2d').drawImage(img, 0, 0, 400, 400);
+    callback(canvas.toDataURL('image/jpeg', 0.75));
+  };
+  img.src = dataUrl;
+}
+
+function randomKey() {
+  const arr = new Uint8Array(6);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, b => b.toString(36).padStart(2,'0')).join('').slice(0, 10);
+}
+
+function upload(cols) {
+  goStep(3);
+  $('uploading-box').style.display = 'flex';
+  $('done-box').style.display = 'none';
+
+  compress(imageUrl, compressed => {
+    const key = randomKey();
+    db.ref('puzzles/' + key).set({
+      img: compressed,
+      cols: cols,
+      ts: Date.now()
+    }).then(() => {
+      generatedUrl = 'https://kenjin0323.github.io/slidepuzzle/?id=' + key;
+      $('share-url').textContent = generatedUrl;
+      $('uploading-box').style.display = 'none';
+      $('done-box').style.display = 'flex';
+    }).catch(() => {
+      $('uploading-box').innerHTML = '<p style="color:#e53e3e">⚠️ アップロードに失敗しました<br>もう一度お試しください</p>' +
+        '<button class="btn-dark" onclick="goStep(2)">← 戻る</button>';
+    });
+  });
+}
+
+// ── イベント ────────────────────────────────
+$('select-btn').addEventListener('click', () => $('file-input').click());
+$('file-input').addEventListener('change', e => { if (e.target.files[0]) loadImage(e.target.files[0]); });
+
+const dz = $('drop-zone');
+dz.addEventListener('click', e => { if (!e.target.closest('#select-btn')) $('file-input').click(); });
+dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('dragover'); });
+dz.addEventListener('dragleave', ()  => dz.classList.remove('dragover'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('dragover');
+  const f = e.dataTransfer.files[0];
+  if (f && f.type.startsWith('image/')) loadImage(f);
+});
+
+$('next-btn').addEventListener('click', () => goStep(2));
+
+$('back-btn').addEventListener('click', () => {
+  $('preview-img').style.display = 'none';
+  $('drop-zone').style.display = 'flex';
+  $('next-btn').style.display = 'none';
+  $('file-input').value = '';
+  document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('selected'));
+  goStep(1);
+});
+
+document.querySelectorAll('.size-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    selectedCols = Number(btn.dataset.cols);
+    setTimeout(() => upload(selectedCols), 200);
+  });
+});
+
+$('copy-btn').addEventListener('click', () => {
+  navigator.clipboard.writeText(generatedUrl).then(() => {
+    $('copy-result').textContent = 'コピーしました！';
+    setTimeout(() => { $('copy-result').textContent = ''; }, 3000);
+  }).catch(() => {
+    $('copy-result').textContent = 'コピーに失敗しました';
+  });
+});
+
+$('restart-btn').addEventListener('click', () => {
+  imageUrl = '';
+  generatedUrl = '';
+  $('preview-img').style.display = 'none';
+  $('drop-zone').style.display = 'flex';
+  $('next-btn').style.display = 'none';
+  $('file-input').value = '';
+  $('copy-result').textContent = '';
+  document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('selected'));
+  goStep(1);
+});
+</script>
+</body>
+</html>
