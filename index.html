@@ -379,6 +379,7 @@ function setDifficulty(cols) {
 let state = [], imageUrl = '', moves = 0;
 let startTime = null, timerID = null, confettiID = null;
 let diffMode = 'play'; // 'play' | 'share'
+let currentShareUrl = '';
 
 // ── ユーティリティ ────────────────────────────
 const $ = id => document.getElementById(id);
@@ -549,35 +550,110 @@ function startConfetti() {
 }
 function stopConfetti() { cancelAnimationFrame(confettiID); confettiID = null; }
 
-// ── パズルファイル生成 ────────────────────────
-function generatePuzzleFile(cols) {
-  $('share-content').innerHTML = '<p class="share-generating">⏳ パズルファイルを作成中...</p>';
-  $('share-modal').style.display = 'flex';
+// ── パズルURL共有 ────────────────────────────
 
-  setTimeout(() => {
-    const html = buildPuzzleHtml(imageUrl, cols);
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url; a.download = 'puzzle.html';
-    document.body.appendChild(a); a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-
-    $('share-content').innerHTML =
-      '<div style="font-size:2.5rem">✅</div>' +
-      '<h2 style="font-size:1.3rem;color:#06C755">作成完了！</h2>' +
-      '<div class="share-filename">puzzle.html</div>' +
-      '<div class="share-steps">' +
-        '<p><span class="step-num">1</span>LINEのトーク画面を開く</p>' +
-        '<p><span class="step-num">2</span>「＋」→「ファイル」をタップ</p>' +
-        '<p><span class="step-num">3</span>ダウンロードした <strong>puzzle.html</strong> を選択して送信</p>' +
-      '</div>' +
-      '<p class="share-note">受け取った人はファイルをダウンロードして<br>ブラウザで開くとパズルが始まります 🧩</p>';
-  }, 80);
+function toBase64url(dataUrl) {
+  const b64 = dataUrl.split(',')[1];
+  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-function buildPuzzleHtml(imgDataUrl, cols) {
+function fromBase64url(b64url) {
+  let b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+  while (b64.length % 4) b64 += '=';
+  return 'data:image/jpeg;base64,' + b64;
+}
+
+function compressForUrl(dataUrl, callback) {
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 300;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, 300, 300);
+    callback(canvas.toDataURL('image/jpeg', 0.42));
+  };
+  img.src = dataUrl;
+}
+
+function sharePuzzleUrl(cols) {
+  $('share-content').innerHTML = '<p class="share-generating">⏳ パズルリンクを作成中...</p>';
+  $('share-modal').style.display = 'flex';
+
+  compressForUrl(imageUrl, compressed => {
+    const url = 'https://kenjin0323.github.io/slidepuzzle/#c=' + cols + '&d=' + toBase64url(compressed);
+
+    if (typeof liff !== 'undefined' && liff.isInClient() && liff.isApiAvailable('shareTargetPicker')) {
+      liff.shareTargetPicker([{
+        type: 'flex',
+        altText: 'フォトスライドパズルが届きました 🧩',
+        contents: {
+          type: 'bubble',
+          body: {
+            type: 'box', layout: 'vertical', spacing: 'md',
+            contents: [
+              { type: 'text', text: '🧩 フォトスライドパズル', weight: 'bold', size: 'xl', color: '#0284c7' },
+              { type: 'text', text: cols + '×' + cols + ' グリッド', color: '#5b8aa0', size: 'sm' },
+              { type: 'text', text: 'パズルを解いてね！', color: '#1e4060', margin: 'md' }
+            ]
+          },
+          footer: {
+            type: 'box', layout: 'vertical',
+            contents: [{
+              type: 'button',
+              action: { type: 'uri', label: 'パズルを開く 🧩', uri: url },
+              style: 'primary', color: '#0ea5e9'
+            }]
+          }
+        }
+      }]).then(() => {
+        $('share-modal').style.display = 'none';
+      }).catch(() => showUrlFallback(url));
+    } else {
+      showUrlFallback(url);
+    }
+  });
+}
+
+function showUrlFallback(url) {
+  currentShareUrl = url;
+  $('share-content').innerHTML =
+    '<div style="font-size:2.5rem">✅</div>' +
+    '<h2 style="font-size:1.3rem;color:#0284c7">リンク作成完了！</h2>' +
+    '<p style="font-size:0.85rem;color:#5b8aa0">リンクをコピーしてLINEに貼り付けてください</p>' +
+    '<button type="button" id="copy-url-btn" ' +
+    'style="background:linear-gradient(135deg,#0ea5e9,#0284c7);color:#fff;padding:12px 24px;border-radius:20px;font-size:1rem;font-weight:700;border:none;cursor:pointer;margin-top:4px">📋 リンクをコピー</button>' +
+    '<p id="copy-msg" style="color:#34d399;font-size:0.85rem;min-height:1.2em"></p>' +
+    '<p style="font-size:0.8rem;color:#5b8aa0;line-height:1.6">コピーしたリンクをLINEのトークに貼り付けて送信してください</p>';
+  $('copy-url-btn').addEventListener('click', () => {
+    navigator.clipboard.writeText(currentShareUrl).then(() => {
+      $('copy-msg').textContent = 'コピーしました！';
+    }).catch(() => {
+      $('copy-msg').textContent = 'コピーに失敗しました';
+    });
+  });
+}
+
+function checkUrlHash() {
+  const hash = location.hash;
+  if (!hash || !hash.includes('d=')) return;
+  const params = new URLSearchParams(hash.slice(1));
+  const cols = parseInt(params.get('c')) || 4;
+  const d = params.get('d');
+  if (!d) return;
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = BOARD_PX;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, BOARD_PX, BOARD_PX);
+    imageUrl = canvas.toDataURL('image/jpeg', 0.92);
+    setDifficulty(cols);
+    startGame();
+  };
+  img.src = fromBase64url(d);
+}
+
+function buildPuzzleHtml(imgDataUrl, cols) { // unused, kept for reference
   const n = cols * cols;
   const e = n - 1;
   const t = 480 / cols;
@@ -767,7 +843,7 @@ document.querySelectorAll('.diff-btn').forEach(btn => {
       setDifficulty(cols);
       startGame();
     } else {
-      generatePuzzleFile(cols);
+      sharePuzzleUrl(cols);
     }
   });
 });
@@ -798,6 +874,8 @@ $('new-photo-btn').addEventListener('click', () => {
   $('file-input').value = '';
   showScreen('screen-select');
 });
+
+checkUrlHash();
 </script>
 </body>
 </html>
