@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>フォトスライドパズル</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Segoe UI', Meiryo, sans-serif;
+  background: #12121f;
+  color: #eee;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ===================== 画面切替 ===================== */
+.screen { display: none; flex-direction: column; align-items: center; gap: 24px; padding: 40px 24px; }
+.screen.active { display: flex; }
+
+/* ===================== 選択画面 ===================== */
+h1 {
+  font-size: 2rem;
+  background: linear-gradient(135deg, #a78bfa, #ec4899);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.subtitle { color: #888; font-size: 0.95rem; }
+
+.drop-zone {
+  width: 340px; height: 210px;
+  border: 2px dashed #444;
+  border-radius: 18px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.drop-zone:hover, .drop-zone.dragover {
+  border-color: #a78bfa;
+  background: rgba(167, 139, 250, 0.07);
+}
+.drop-inner { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+.drop-icon  { font-size: 3.2rem; }
+.drop-hint  { color: #888; font-size: 0.88rem; line-height: 1.7; }
+
+#preview-area {
+  flex-direction: column; align-items: center; gap: 16px;
+}
+#preview-img {
+  width: 280px; height: 280px;
+  object-fit: cover; border-radius: 14px;
+  border: 3px solid #a78bfa;
+  box-shadow: 0 0 24px rgba(167,139,250,0.4);
+}
+
+/* ===================== 難易度モーダル ===================== */
+#diff-modal {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 200;
+  background: rgba(0,0,0,0.65);
+  backdrop-filter: blur(6px);
+}
+.diff-card {
+  background: rgba(18,18,31,0.98);
+  border: 2px solid #a78bfa;
+  border-radius: 24px;
+  padding: 40px 48px;
+  display: flex; flex-direction: column; align-items: center; gap: 20px;
+  animation: pop-in 0.4s cubic-bezier(0.34,1.56,0.64,1) both;
+  box-shadow: 0 0 60px rgba(167,139,250,0.2), 0 20px 50px rgba(0,0,0,0.6);
+}
+.diff-card h2 { font-size: 1.5rem; font-weight: 700; }
+.diff-card > p { color: #888; font-size: 0.88rem; margin-top: -8px; }
+.diff-options  { display: flex; gap: 16px; }
+.diff-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  width: 112px; padding: 20px 12px;
+  background: #1e1e32;
+  border: 2px solid #333 !important;
+  border-radius: 16px !important;
+  cursor: pointer;
+  transition: all 0.2s !important;
+}
+.diff-btn:hover {
+  border-color: #a78bfa !important;
+  background: rgba(167,139,250,0.12) !important;
+  transform: translateY(-6px) !important;
+  filter: none !important;
+  box-shadow: 0 10px 28px rgba(167,139,250,0.25);
+}
+.diff-btn:active { transform: translateY(-2px) !important; filter: none !important; }
+.diff-recommended { border-color: #a78bfa !important; background: rgba(167,139,250,0.08) !important; }
+.diff-emoji  { font-size: 2.2rem; pointer-events: none; }
+.diff-size   { font-size: 1.45rem; font-weight: 700; color: #a78bfa; pointer-events: none; }
+.diff-name   { font-size: 0.82rem; font-weight: 600; color: #ccc; pointer-events: none; }
+.diff-pieces { font-size: 0.73rem; color: #666; pointer-events: none; }
+.diff-rec-badge {
+  font-size: 0.63rem; font-weight: 700;
+  background: linear-gradient(135deg, #a78bfa, #ec4899);
+  color: #fff;
+  padding: 2px 8px; border-radius: 10px;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+
+/* ===================== ゲーム画面 ===================== */
+.game-wrapper { display: flex; flex-direction: column; gap: 16px; }
+
+.game-header {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 628px;
+}
+.stats { display: flex; gap: 24px; align-items: center; font-size: 0.95rem; }
+.stats strong { color: #f472b6; font-size: 1.3rem; }
+.grid-badge {
+  background: rgba(167,139,250,0.15);
+  border: 1px solid rgba(167,139,250,0.4);
+  color: #a78bfa;
+  padding: 3px 13px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.g-controls { display: flex; gap: 8px; }
+
+.game-area { display: flex; gap: 20px; align-items: flex-start; }
+
+#puzzle-board {
+  position: relative;
+  width: 480px; height: 480px;
+  background: #0a0a14;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.7);
+  flex-shrink: 0;
+}
+
+.tile {
+  position: absolute; left: 0; top: 0;
+  cursor: pointer;
+  will-change: transform;
+  transition: transform 0.13s cubic-bezier(0.25,0.46,0.45,0.94);
+  outline: 1.5px solid rgba(255,255,255,0.07);
+}
+.tile:hover  { filter: brightness(1.14) drop-shadow(0 0 6px rgba(167,139,250,0.5)); }
+.tile:active { filter: brightness(0.92); }
+
+.preview-panel { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.preview-label { font-size: 0.72rem; color: #666; letter-spacing: 0.06em; text-transform: uppercase; }
+#thumb-img {
+  width: 128px; height: 128px;
+  object-fit: cover; border-radius: 10px;
+  border: 2px solid #2a2a3e;
+}
+
+/* ===================== お祝い ===================== */
+#celebration {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 300;
+  background: rgba(0,0,0,0.25);
+}
+#confetti-canvas {
+  position: absolute; inset: 0;
+  pointer-events: none;
+}
+.cel-card {
+  position: relative;
+  background: rgba(18, 18, 31, 0.97);
+  border: 2px solid #a78bfa;
+  border-radius: 26px;
+  padding: 52px 64px;
+  text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  animation: pop-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  box-shadow: 0 0 80px rgba(167,139,250,0.3), 0 24px 60px rgba(0,0,0,0.6);
+}
+.cel-emoji { font-size: 4rem; animation: bob 0.7s ease-in-out infinite alternate; }
+.cel-card h2 { font-size: 2.4rem; font-weight: 700; }
+.cel-stats { color: #aaa; font-size: 1.05rem; line-height: 2.1; }
+.cel-stats strong { color: #f472b6; }
+.cel-buttons { display: flex; gap: 12px; margin-top: 10px; }
+
+@keyframes pop-in {
+  from { transform: scale(0.3) rotate(-8deg); opacity: 0; }
+  to   { transform: scale(1)   rotate(0deg);  opacity: 1; }
+}
+@keyframes bob {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-14px); }
+}
+
+/* ===================== ボタン共通 ===================== */
+button {
+  padding: 10px 22px; border: none; border-radius: 10px;
+  font-size: 0.95rem; font-weight: 600; cursor: pointer;
+  transition: transform 0.1s, filter 0.15s;
+}
+button:hover  { filter: brightness(1.12); transform: translateY(-2px); }
+button:active { transform: translateY(0);  filter: brightness(0.94); }
+.btn-primary { background: linear-gradient(135deg, #a78bfa, #ec4899); color: #fff; }
+.btn-success { background: linear-gradient(135deg, #34d399, #059669); color: #fff; }
+.btn-dark    { background: #23233a; color: #ccc; border: 1px solid #3a3a5c; }
+</style>
+</head>
+<body>
+
+<!-- ========================================================
+     画像選択画面
+======================================================== -->
+<div id="screen-select" class="screen active">
+  <h1>📸 フォトスライドパズル</h1>
+  <p class="subtitle">自分の写真でスライドパズルを楽しもう</p>
+
+  <div class="drop-zone" id="drop-zone">
+    <input type="file" id="file-input" accept="image/*" hidden>
+    <div class="drop-inner">
+      <div class="drop-icon">🖼️</div>
+      <p class="drop-hint">写真をここにドラッグ＆ドロップ<br>または</p>
+      <button type="button" class="btn-primary" id="select-btn">ファイルを選択</button>
+    </div>
+  </div>
+
+  <div id="preview-area" style="display:none">
+    <img id="preview-img" alt="選択した写真のプレビュー">
+    <button type="button" class="btn-success" id="start-btn"
+            style="padding:14px 40px;font-size:1.1rem;border-radius:32px">
+      ▶ 難易度を選ぶ
+    </button>
+  </div>
+</div>
+
+<!-- ========================================================
+     難易度選択モーダル
+======================================================== -->
+<div id="diff-modal" style="display:none">
+  <div class="diff-card">
+    <h2>グリッドサイズを選択</h2>
+    <p>大きいほど難しくなります</p>
+    <div class="diff-options">
+
+      <button type="button" class="diff-btn" data-cols="3">
+        <span class="diff-emoji">😊</span>
+        <span class="diff-size">3 × 3</span>
+        <span class="diff-name">かんたん</span>
+        <span class="diff-pieces">8 ピース</span>
+      </button>
+
+      <button type="button" class="diff-btn diff-recommended" data-cols="4">
+        <span class="diff-emoji">🧩</span>
+        <span class="diff-size">4 × 4</span>
+        <span class="diff-name">ふつう</span>
+        <span class="diff-pieces">15 ピース</span>
+        <span class="diff-rec-badge">おすすめ</span>
+      </button>
+
+      <button type="button" class="diff-btn" data-cols="5">
+        <span class="diff-emoji">🔥</span>
+        <span class="diff-size">5 × 5</span>
+        <span class="diff-name">むずかしい</span>
+        <span class="diff-pieces">24 ピース</span>
+      </button>
+
+    </div>
+  </div>
+</div>
+
+<!-- ========================================================
+     ゲーム画面
+======================================================== -->
+<div id="screen-game" class="screen">
+  <div class="game-wrapper">
+    <div class="game-header">
+      <div class="stats">
+        <span class="grid-badge" id="grid-badge">4×4</span>
+        <span>手数&thinsp;<strong id="move-count">0</strong></span>
+        <span>時間&thinsp;<strong id="timer">00:00</strong></span>
+      </div>
+      <div class="g-controls">
+        <button type="button" class="btn-primary" id="shuffle-btn">🔀 シャッフル</button>
+        <button type="button" class="btn-dark"    id="back-btn">← 戻る</button>
+      </div>
+    </div>
+
+    <div class="game-area">
+      <div id="puzzle-board"></div>
+      <div class="preview-panel">
+        <span class="preview-label">完成図</span>
+        <img id="thumb-img" alt="完成図">
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========================================================
+     お祝いオーバーレイ
+======================================================== -->
+<div id="celebration" style="display:none">
+  <canvas id="confetti-canvas"></canvas>
+  <div class="cel-card">
+    <div class="cel-emoji">🎊</div>
+    <h2>パズル完成！</h2>
+    <p class="cel-stats" id="result-text"></p>
+    <div class="cel-buttons">
+      <button type="button" class="btn-success" id="play-again-btn">🔀 もう一度遊ぶ</button>
+      <button type="button" class="btn-dark"    id="new-photo-btn">📷 別の写真</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ──────────────────────────────────────────────
+// 定数・変数（難易度によって変化するものは let）
+// ──────────────────────────────────────────────
+const BOARD_PX = 480;
+
+let COLS     = 4;
+let ROWS     = 4;
+let N        = COLS * ROWS;
+let EMPTY_ID = N - 1;
+let TILE_PX  = BOARD_PX / COLS;
+
+function setDifficulty(cols) {
+  COLS     = cols;
+  ROWS     = cols;
+  N        = cols * cols;
+  EMPTY_ID = N - 1;
+  TILE_PX  = BOARD_PX / cols;
+}
+
+// ──────────────────────────────────────────────
+// 状態
+// ──────────────────────────────────────────────
+let state      = [];
+let imageUrl   = '';
+let moves      = 0;
+let startTime  = null;
+let timerID    = null;
+let confettiID = null;
+
+// ──────────────────────────────────────────────
+// ユーティリティ
+// ──────────────────────────────────────────────
+const $  = id => document.getElementById(id);
+const r  = pos => Math.floor(pos / COLS);
+const c  = pos => pos % COLS;
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  $(id).classList.add('active');
+}
+
+function neighbors(pos) {
+  const result = [];
+  if (r(pos) > 0)      result.push(pos - COLS);
+  if (r(pos) < ROWS-1) result.push(pos + COLS);
+  if (c(pos) > 0)      result.push(pos - 1);
+  if (c(pos) < COLS-1) result.push(pos + 1);
+  return result;
+}
+
+// ──────────────────────────────────────────────
+// 画像処理（センタークロップして正方形に）
+// ──────────────────────────────────────────────
+function loadImageFile(file) {
+  const reader = new FileReader();
+  reader.onload = evt => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = BOARD_PX;
+      const ctx = canvas.getContext('2d');
+      const dim = Math.min(img.width, img.height);
+      const sx  = (img.width  - dim) / 2;
+      const sy  = (img.height - dim) / 2;
+      ctx.drawImage(img, sx, sy, dim, dim, 0, 0, BOARD_PX, BOARD_PX);
+      imageUrl = canvas.toDataURL('image/jpeg', 0.92);
+      $('preview-img').src = imageUrl;
+      $('preview-area').style.display = 'flex';
+    };
+    img.src = evt.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// ──────────────────────────────────────────────
+// パズル状態管理
+// ──────────────────────────────────────────────
+function initSolved() {
+  state = Array.from({ length: N }, (_, i) => i);
+}
+
+function shuffleState() {
+  const steps = Math.max(80, N * 22);
+  do {
+    initSolved();
+    let empty = state.indexOf(EMPTY_ID);
+    let prev  = -1;
+    for (let i = 0; i < steps; i++) {
+      const nb   = neighbors(empty).filter(p => p !== prev);
+      const next = nb[(Math.random() * nb.length) | 0];
+      [state[empty], state[next]] = [state[next], state[empty]];
+      prev  = empty;
+      empty = next;
+    }
+  } while (isSolved());
+}
+
+function isSolved() {
+  return state.every((id, pos) => id === pos);
+}
+
+// ──────────────────────────────────────────────
+// タイル DOM
+// ──────────────────────────────────────────────
+function buildBoard() {
+  const board = $('puzzle-board');
+  board.innerHTML = '';
+  for (let id = 0; id < EMPTY_ID; id++) {
+    const div = document.createElement('div');
+    div.className = 'tile';
+    div.dataset.id = id;
+    div.style.width              = TILE_PX + 'px';
+    div.style.height             = TILE_PX + 'px';
+    div.style.backgroundImage    = `url("${imageUrl}")`;
+    div.style.backgroundSize     = `${BOARD_PX}px ${BOARD_PX}px`;
+    div.style.backgroundPosition = `-${(id % COLS) * TILE_PX}px -${Math.floor(id / COLS) * TILE_PX}px`;
+    div.addEventListener('click', () => clickTile(id));
+    board.appendChild(div);
+  }
+}
+
+function renderBoard(animate = true) {
+  const board = $('puzzle-board');
+  for (let id = 0; id < EMPTY_ID; id++) {
+    const pos = state.indexOf(id);
+    const el  = board.querySelector(`[data-id="${id}"]`);
+    if (!el) continue;
+    el.style.transition = animate
+      ? 'transform 0.13s cubic-bezier(0.25,0.46,0.45,0.94)'
+      : 'none';
+    el.style.transform = `translate(${c(pos) * TILE_PX}px, ${r(pos) * TILE_PX}px)`;
+  }
+}
+
+// ──────────────────────────────────────────────
+// クリック処理
+// ──────────────────────────────────────────────
+function clickTile(id) {
+  const tilePos  = state.indexOf(id);
+  const emptyPos = state.indexOf(EMPTY_ID);
+  if (!neighbors(emptyPos).includes(tilePos)) return;
+
+  [state[emptyPos], state[tilePos]] = [state[tilePos], state[emptyPos]];
+  moves++;
+  $('move-count').textContent = moves;
+  renderBoard(true);
+
+  if (isSolved()) setTimeout(celebrate, 160);
+}
+
+// ──────────────────────────────────────────────
+// ゲーム開始・リセット
+// ──────────────────────────────────────────────
+function startGame() {
+  $('grid-badge').textContent = `${COLS}×${COLS}`;
+  $('thumb-img').src = imageUrl;
+  buildBoard();
+  shuffleState();
+  resetStats();
+  renderBoard(false);
+  showScreen('screen-game');
+}
+
+function resetStats() {
+  moves = 0;
+  $('move-count').textContent = '0';
+  $('timer').textContent = '00:00';
+  stopTimer();
+  startTimer();
+}
+
+// ──────────────────────────────────────────────
+// タイマー
+// ──────────────────────────────────────────────
+function startTimer() {
+  startTime = Date.now();
+  timerID = setInterval(() => {
+    const sec = ((Date.now() - startTime) / 1000) | 0;
+    $('timer').textContent =
+      String((sec / 60) | 0).padStart(2, '0') + ':' +
+      String(sec % 60).padStart(2, '0');
+  }, 500);
+}
+
+function stopTimer() {
+  clearInterval(timerID);
+  timerID = null;
+}
+
+function elapsedStr() {
+  const sec = ((Date.now() - startTime) / 1000) | 0;
+  const m   = (sec / 60) | 0;
+  return m ? `${m}分 ${sec % 60}秒` : `${sec}秒`;
+}
+
+// ──────────────────────────────────────────────
+// お祝い
+// ──────────────────────────────────────────────
+function celebrate() {
+  stopTimer();
+  $('result-text').innerHTML =
+    `${COLS}×${COLS} ／ <strong>${moves}</strong> 手 ／ <strong>${elapsedStr()}</strong> でクリア！ 🎉`;
+  $('celebration').style.display = 'flex';
+  startConfetti();
+}
+
+function hideCelebration() {
+  $('celebration').style.display = 'none';
+  stopConfetti();
+}
+
+// ──────────────────────────────────────────────
+// コンフェッティ
+// ──────────────────────────────────────────────
+const C_COLORS = [
+  '#a78bfa','#ec4899','#34d399','#60a5fa',
+  '#fbbf24','#f87171','#38bdf8','#fb923c',
+];
+
+function startConfetti() {
+  const canvas = $('confetti-canvas');
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+  const ctx = canvas.getContext('2d');
+
+  const pieces = Array.from({ length: 220 }, () => ({
+    x:     Math.random() * canvas.width,
+    y:    -30 - Math.random() * 400,
+    vx:    (Math.random() - 0.5) * 5,
+    vy:    1.8 + Math.random() * 4,
+    w:     7 + Math.random() * 10,
+    h:     4 + Math.random() * 7,
+    rot:   Math.random() * Math.PI * 2,
+    rv:    (Math.random() - 0.5) * 0.2,
+    color: C_COLORS[(Math.random() * C_COLORS.length) | 0],
+  }));
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    pieces.forEach(p => {
+      p.x   += p.vx;
+      p.y   += p.vy;
+      p.vy  += 0.06;
+      p.rot += p.rv;
+      if (p.y > canvas.height + 20) {
+        p.y  = -20;
+        p.x  = Math.random() * canvas.width;
+        p.vy = 1.8 + Math.random() * 4;
+      }
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = 0.88;
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      ctx.restore();
+    });
+    confettiID = requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+function stopConfetti() {
+  cancelAnimationFrame(confettiID);
+  confettiID = null;
+}
+
+// ──────────────────────────────────────────────
+// イベント登録
+// ──────────────────────────────────────────────
+
+// ファイル選択
+$('select-btn').addEventListener('click', () => $('file-input').click());
+$('file-input').addEventListener('change', e => {
+  if (e.target.files[0]) loadImageFile(e.target.files[0]);
+});
+
+// ドラッグ＆ドロップ
+const dz = $('drop-zone');
+dz.addEventListener('click', e => {
+  if (!e.target.closest('#select-btn')) $('file-input').click();
+});
+dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('dragover'); });
+dz.addEventListener('dragleave', ()  => dz.classList.remove('dragover'));
+dz.addEventListener('drop', e => {
+  e.preventDefault();
+  dz.classList.remove('dragover');
+  const f = e.dataTransfer.files[0];
+  if (f && f.type.startsWith('image/')) loadImageFile(f);
+});
+
+// スタートボタン → 難易度モーダルを開く
+$('start-btn').addEventListener('click', () => {
+  $('diff-modal').style.display = 'flex';
+});
+
+// 難易度ボタン → 難易度をセットしてゲーム開始
+document.querySelectorAll('.diff-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    setDifficulty(Number(btn.dataset.cols));
+    $('diff-modal').style.display = 'none';
+    startGame();
+  });
+});
+
+// モーダル背景クリックで閉じる
+$('diff-modal').addEventListener('click', e => {
+  if (e.target === $('diff-modal')) $('diff-modal').style.display = 'none';
+});
+
+// シャッフルボタン（再シャッフル・同じ難易度で）
+$('shuffle-btn').addEventListener('click', () => {
+  shuffleState();
+  resetStats();
+  renderBoard(false);
+});
+
+// 戻るボタン
+$('back-btn').addEventListener('click', () => {
+  stopTimer();
+  showScreen('screen-select');
+});
+
+// もう一度遊ぶ（同じ難易度・同じ写真）
+$('play-again-btn').addEventListener('click', () => {
+  hideCelebration();
+  shuffleState();
+  resetStats();
+  renderBoard(false);
+});
+
+// 別の写真で遊ぶ
+$('new-photo-btn').addEventListener('click', () => {
+  hideCelebration();
+  stopTimer();
+  $('preview-area').style.display = 'none';
+  $('file-input').value = '';
+  showScreen('screen-select');
+});
+</script>
+</body>
+</html>
