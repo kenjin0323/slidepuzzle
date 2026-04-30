@@ -733,19 +733,18 @@ function submitRanking() {
   btn.disabled = true; btn.textContent = '登録中...';
 
   const entry = { name, secs: completionSecs, moves, ts: Date.now() };
-  const rankRef = db.ref('puzzles/' + currentPuzzleId + '/rankings');
+  const newKey = 'r' + Date.now() + '_' + Math.floor(Math.random() * 9999);
 
   loadRankings()
     .then(existing => {
       const all = [...existing, entry].sort((a, b) => a.secs - b.secs || a.moves - b.moves);
       const updates = {};
-      updates['puzzles/' + currentPuzzleId + '/rankings/' + rankRef.push().key] = entry;
+      updates['puzzles/' + currentPuzzleId + '/rankings/' + newKey] = entry;
       all.slice(10).forEach(r => {
         if (r.id) updates['puzzles/' + currentPuzzleId + '/rankings/' + r.id] = null;
       });
-      return db.ref().update(updates);
+      return db.ref().update(updates).then(() => all.slice(0, 10));
     })
-    .then(() => loadRankings())
     .then(rankings => showRankingDisplay(rankings, name, completionSecs))
     .catch(() => {
       btn.disabled = false; btn.textContent = '登録';
