@@ -609,11 +609,23 @@ function celebrate() {
 
   if (currentPuzzleId) {
     $('ranking-section').style.display = 'block';
-    $('ranking-input').style.display = 'block';
+    $('ranking-input').style.display = 'none';
     $('ranking-display').style.display = 'none';
     $('player-name').value = '';
     $('submit-rank-btn').disabled = false;
     $('submit-rank-btn').textContent = '登録';
+
+    loadRankings().then(rankings => {
+      const worst = rankings[9];
+      const qualifies = !worst ||
+        completionSecs < worst.secs ||
+        (completionSecs === worst.secs && moves < worst.moves);
+      if (qualifies) {
+        $('ranking-input').style.display = 'block';
+      } else {
+        showRankingDisplay(rankings, null, null);
+      }
+    });
   }
 }
 function hideCelebration() {
@@ -720,28 +732,25 @@ function submitRanking() {
   const btn = $('submit-rank-btn');
   btn.disabled = true; btn.textContent = '登録中...';
 
-  const ref = db.ref('puzzles/' + currentPuzzleId + '/rankings');
-  ref.once('value').then(snap => {
-    const existing = [];
-    snap.forEach(child => existing.push({ id: child.key, ...child.val() }));
-    const entry = { name, secs: completionSecs, moves, ts: Date.now() };
-    const all = [...existing, { ...entry, _new: true }]
-      .sort((a, b) => a.secs - b.secs || a.moves - b.moves);
-    const myRank = all.findIndex(r => r._new);
+  const entry = { name, secs: completionSecs, moves, ts: Date.now() };
+  const rankRef = db.ref('puzzles/' + currentPuzzleId + '/rankings');
 
-    if (myRank < 10) {
+  loadRankings()
+    .then(existing => {
+      const all = [...existing, entry].sort((a, b) => a.secs - b.secs || a.moves - b.moves);
       const updates = {};
-      updates['puzzles/' + currentPuzzleId + '/rankings/' + ref.push().key] = entry;
-      all.forEach((r, i) => { if (i >= 10 && r.id) updates['puzzles/' + currentPuzzleId + '/rankings/' + r.id] = null; });
-      return db.ref().update(updates).then(() => loadRankings());
-    }
-    return loadRankings();
-  }).then(rankings => {
-    showRankingDisplay(rankings, name, completionSecs);
-  }).catch(() => {
-    btn.disabled = false; btn.textContent = '登録';
-    alert('登録に失敗しました');
-  });
+      updates['puzzles/' + currentPuzzleId + '/rankings/' + rankRef.push().key] = entry;
+      all.slice(10).forEach(r => {
+        if (r.id) updates['puzzles/' + currentPuzzleId + '/rankings/' + r.id] = null;
+      });
+      return db.ref().update(updates);
+    })
+    .then(() => loadRankings())
+    .then(rankings => showRankingDisplay(rankings, name, completionSecs))
+    .catch(() => {
+      btn.disabled = false; btn.textContent = '登録';
+      alert('登録に失敗しました');
+    });
 }
 
 // ── パズル共有（Firebase） ────────────────────
