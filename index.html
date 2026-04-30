@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>フォトスライドパズル</title>
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -361,6 +363,31 @@ button:active { transform: translateY(0);  filter: brightness(0.94); }
 <script>
 'use strict';
 
+// ── Firebase ──────────────────────────────────
+firebase.initializeApp({
+  apiKey: "AIzaSyD1AdN1sZK2pQLZjmHRGJs8GZnDiawKkyc",
+  authDomain: "slidepuzzle-79e89.firebaseapp.com",
+  databaseURL: "https://slidepuzzle-79e89-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "slidepuzzle-79e89",
+  storageBucket: "slidepuzzle-79e89.firebasestorage.app",
+  messagingSenderId: "666868520258",
+  appId: "1:666868520258:web:ed88e2fbe3526400ada4db"
+});
+const db = firebase.database();
+
+function randomKey() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+function savePuzzle(imgDataUrl, cols) {
+  const key = randomKey();
+  return db.ref('puzzles/' + key).set({ img: imgDataUrl, cols: cols, ts: Date.now() }).then(() => key);
+}
+
+function loadPuzzle(key) {
+  return db.ref('puzzles/' + key).get().then(snap => snap.exists() ? snap.val() : null);
+}
+
 // ── LIFF ──────────────────────────────────────
 const LIFF_ID = '2009936757-HcECEkM1';
 if (typeof liff !== 'undefined') {
@@ -550,67 +577,60 @@ function startConfetti() {
 }
 function stopConfetti() { cancelAnimationFrame(confettiID); confettiID = null; }
 
-// ── パズルURL共有 ────────────────────────────
+// ── パズル共有（Firebase） ────────────────────
 
-function toBase64url(dataUrl) {
-  const b64 = dataUrl.split(',')[1];
-  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-function fromBase64url(b64url) {
-  let b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
-  while (b64.length % 4) b64 += '=';
-  return 'data:image/jpeg;base64,' + b64;
-}
-
-function compressForUrl(dataUrl, callback) {
+function compressForShare(dataUrl, callback) {
   const img = new Image();
   img.onload = () => {
     const canvas = document.createElement('canvas');
-    canvas.width = canvas.height = 300;
+    canvas.width = canvas.height = 400;
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, 300, 300);
-    callback(canvas.toDataURL('image/jpeg', 0.42));
+    ctx.drawImage(img, 0, 0, 400, 400);
+    callback(canvas.toDataURL('image/jpeg', 0.75));
   };
   img.src = dataUrl;
 }
 
 function sharePuzzleUrl(cols) {
-  $('share-content').innerHTML = '<p class="share-generating">⏳ パズルリンクを作成中...</p>';
+  $('share-content').innerHTML = '<p class="share-generating">⏳ アップロード中...</p>';
   $('share-modal').style.display = 'flex';
 
-  compressForUrl(imageUrl, compressed => {
-    const url = 'https://kenjin0323.github.io/slidepuzzle/#c=' + cols + '&d=' + toBase64url(compressed);
+  compressForShare(imageUrl, compressed => {
+    savePuzzle(compressed, cols).then(key => {
+      const url = 'https://kenjin0323.github.io/slidepuzzle/?id=' + key;
 
-    if (typeof liff !== 'undefined' && liff.isInClient() && liff.isApiAvailable('shareTargetPicker')) {
-      liff.shareTargetPicker([{
-        type: 'flex',
-        altText: 'フォトスライドパズルが届きました 🧩',
-        contents: {
-          type: 'bubble',
-          body: {
-            type: 'box', layout: 'vertical', spacing: 'md',
-            contents: [
-              { type: 'text', text: '🧩 フォトスライドパズル', weight: 'bold', size: 'xl', color: '#0284c7' },
-              { type: 'text', text: cols + '×' + cols + ' グリッド', color: '#5b8aa0', size: 'sm' },
-              { type: 'text', text: 'パズルを解いてね！', color: '#1e4060', margin: 'md' }
-            ]
-          },
-          footer: {
-            type: 'box', layout: 'vertical',
-            contents: [{
-              type: 'button',
-              action: { type: 'uri', label: 'パズルを開く 🧩', uri: url },
-              style: 'primary', color: '#0ea5e9'
-            }]
+      if (typeof liff !== 'undefined' && liff.isInClient() && liff.isApiAvailable('shareTargetPicker')) {
+        liff.shareTargetPicker([{
+          type: 'flex',
+          altText: 'フォトスライドパズルが届きました 🧩',
+          contents: {
+            type: 'bubble',
+            body: {
+              type: 'box', layout: 'vertical', spacing: 'md',
+              contents: [
+                { type: 'text', text: '🧩 フォトスライドパズル', weight: 'bold', size: 'xl', color: '#0284c7' },
+                { type: 'text', text: cols + '×' + cols + ' グリッド', color: '#5b8aa0', size: 'sm' },
+                { type: 'text', text: 'パズルを解いてね！', color: '#1e4060', margin: 'md' }
+              ]
+            },
+            footer: {
+              type: 'box', layout: 'vertical',
+              contents: [{
+                type: 'button',
+                action: { type: 'uri', label: 'パズルを開く 🧩', uri: url },
+                style: 'primary', color: '#0ea5e9'
+              }]
+            }
           }
-        }
-      }]).then(() => {
-        $('share-modal').style.display = 'none';
-      }).catch(() => showUrlFallback(url));
-    } else {
-      showUrlFallback(url);
-    }
+        }]).then(() => {
+          $('share-modal').style.display = 'none';
+        }).catch(() => showUrlFallback(url));
+      } else {
+        showUrlFallback(url);
+      }
+    }).catch(() => {
+      $('share-content').innerHTML = '<p style="color:#e53e3e;font-size:0.9rem">⚠️ アップロードに失敗しました。<br>もう一度お試しください。</p>';
+    });
   });
 }
 
@@ -633,24 +653,32 @@ function showUrlFallback(url) {
   });
 }
 
-function checkUrlHash() {
-  const hash = location.hash;
-  if (!hash || !hash.includes('d=')) return;
-  const params = new URLSearchParams(hash.slice(1));
-  const cols = parseInt(params.get('c')) || 4;
-  const d = params.get('d');
-  if (!d) return;
-  const img = new Image();
-  img.onload = () => {
-    const canvas = document.createElement('canvas');
-    canvas.width = canvas.height = BOARD_PX;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, BOARD_PX, BOARD_PX);
-    imageUrl = canvas.toDataURL('image/jpeg', 0.92);
-    setDifficulty(cols);
-    startGame();
-  };
-  img.src = fromBase64url(d);
+function checkUrlParam() {
+  const id = new URLSearchParams(location.search).get('id');
+  if (!id) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'loading-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(160deg,#daf5ff,#b8e8ff);font-size:1.2rem;color:#1e4060;z-index:999';
+  overlay.textContent = '⏳ パズルを読み込み中...';
+  document.body.appendChild(overlay);
+
+  loadPuzzle(id).then(data => {
+    overlay.remove();
+    if (!data) { alert('パズルが見つかりませんでした'); return; }
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = BOARD_PX;
+      canvas.getContext('2d').drawImage(img, 0, 0, BOARD_PX, BOARD_PX);
+      imageUrl = canvas.toDataURL('image/jpeg', 0.92);
+      setDifficulty(data.cols);
+      startGame();
+    };
+    img.src = data.img;
+  }).catch(() => {
+    overlay.remove();
+    alert('読み込みに失敗しました');
+  });
 }
 
 function buildPuzzleHtml(imgDataUrl, cols) { // unused, kept for reference
@@ -875,7 +903,7 @@ $('new-photo-btn').addEventListener('click', () => {
   showScreen('screen-select');
 });
 
-checkUrlHash();
+checkUrlParam();
 </script>
 </body>
 </html>
