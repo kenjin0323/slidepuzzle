@@ -230,22 +230,6 @@ h1 {
 }
 .cel-buttons { display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap; justify-content: center; }
 
-/* ===================== ランキング ===================== */
-.rank-divider { width: 100%; border: none; border-top: 1px solid #bae6fd; margin: 4px 0; }
-.rank-input-row { display: flex; gap: 8px; width: 100%; }
-.rank-input-row input {
-  flex: 1; padding: 10px 12px;
-  border: 2px solid #bae6fd; border-radius: 10px;
-  font-size: 0.95rem; color: #1e4060; outline: none;
-  font-family: inherit;
-}
-.rank-input-row input:focus { border-color: #0ea5e9; }
-.rank-skip { background: none; border: none; color: #94a3b8; font-size: 0.78rem; cursor: pointer; padding: 2px 0; }
-.rank-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin-top: 8px; }
-.rank-table th { background: #e0f2fe; color: #1e4060; padding: 7px 8px; }
-.rank-table td { padding: 7px 8px; text-align: center; border-bottom: 1px solid #e8f4fd; color: #1e4060; }
-.rank-table tr.my-rank td { background: rgba(14,165,233,0.12); font-weight: 700; color: #0284c7; }
-.rank-msg { font-size: 0.88rem; font-weight: 700; color: #0284c7; margin-bottom: 4px; }
 
 @keyframes pop-in {
   from { transform: scale(0.3) rotate(-8deg); opacity: 0; }
@@ -374,7 +358,6 @@ button:active { transform: translateY(0);  filter: brightness(0.94); }
       </div>
       <div class="g-controls">
         <button type="button" class="btn-primary" id="shuffle-btn">🔀 シャッフル</button>
-        <button type="button" class="btn-dark"    id="back-btn">← 戻る</button>
       </div>
     </div>
     <div class="game-area">
@@ -400,18 +383,6 @@ button:active { transform: translateY(0);  filter: brightness(0.94); }
     <div class="cel-buttons">
       <button type="button" class="btn-primary" id="save-photo-btn">⬇ 写真を保存</button>
       <button type="button" class="btn-success" id="play-again-btn">🔀 もう一度遊ぶ</button>
-    </div>
-    <div id="ranking-section" style="display:none;width:100%">
-      <hr class="rank-divider">
-      <div id="ranking-input">
-        <p style="font-size:0.9rem;font-weight:700;color:#1e4060;margin-bottom:8px">🏆 ランキングに登録</p>
-        <div class="rank-input-row">
-          <input type="text" id="player-name" placeholder="名前（10文字まで）" maxlength="10">
-          <button type="button" class="btn-primary" id="submit-rank-btn" style="padding:10px 16px;white-space:nowrap">登録</button>
-        </div>
-        <button type="button" class="rank-skip" id="skip-rank-btn">スキップ →</button>
-      </div>
-      <div id="ranking-display" style="display:none;width:100%"></div>
     </div>
   </div>
 </div>
@@ -465,8 +436,6 @@ let startTime = null, timerID = null, confettiID = null;
 let diffMode = 'play'; // 'play' | 'share'
 let currentShareUrl = '';
 let currentPuzzleId = null;
-let completionSecs = 0;
-let rankingsCache = null;
 
 // ── ユーティリティ ────────────────────────────
 const $ = id => document.getElementById(id);
@@ -600,44 +569,16 @@ function elapsedStr() {
 // ── お祝い ────────────────────────────────────
 function celebrate() {
   stopTimer();
-  completionSecs = ((Date.now() - startTime) / 1000) | 0;
   $('result-text').innerHTML =
     '<strong>' + moves + '</strong> 手 ／ <strong>' + elapsedStr() + '</strong> でクリア！🎉';
   $('cel-photo').src = imageUrl;
   $('cel-photo').style.display = 'block';
   $('celebration').style.display = 'flex';
   startConfetti();
-
-  if (currentPuzzleId) {
-    $('ranking-section').style.display = 'block';
-    $('ranking-input').style.display = 'none';
-    $('ranking-display').style.display = 'none';
-    $('player-name').value = '';
-    $('submit-rank-btn').disabled = false;
-    $('submit-rank-btn').textContent = '登録';
-
-    loadRankings().then(rankings => {
-      rankingsCache = rankings;
-      const worst = rankings[9];
-      const qualifies = !worst ||
-        completionSecs < worst.secs ||
-        (completionSecs === worst.secs && moves < worst.moves);
-      if (qualifies) {
-        $('ranking-input').style.display = 'block';
-      } else {
-        showRankingDisplay(rankings, null, null);
-      }
-    }).catch(() => {
-      rankingsCache = [];
-      $('ranking-input').style.display = 'block';
-    });
-  }
 }
 function hideCelebration() {
   $('celebration').style.display = 'none';
   $('cel-photo').style.display = 'none';
-  $('ranking-section').style.display = 'none';
-  rankingsCache = null;
   stopConfetti();
 }
 
@@ -689,72 +630,6 @@ function startConfetti() {
 }
 function stopConfetti() { cancelAnimationFrame(confettiID); confettiID = null; }
 
-// ── ランキング ────────────────────────────────
-
-function escapeHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-function secsToStr(s) {
-  return String((s/60)|0).padStart(2,'0') + ':' + String(s%60).padStart(2,'0');
-}
-
-function loadRankings() {
-  return db.ref('puzzles/' + currentPuzzleId + '/rankings').once('value').then(snap => {
-    const list = [];
-    snap.forEach(child => list.push({ id: child.key, ...child.val() }));
-    return list.sort((a, b) => a.secs - b.secs || a.moves - b.moves).slice(0, 10);
-  });
-}
-
-function showRankingDisplay(rankings, highlightName, highlightSecs) {
-  const medals = ['🥇','🥈','🥉'];
-  let msg = '';
-  const myIdx = rankings.findIndex(r => r.name === highlightName && r.secs === highlightSecs);
-  if (highlightName && myIdx >= 0) {
-    msg = '<p class="rank-msg">🎉 ' + (myIdx + 1) + '位でランクイン！</p>';
-  } else if (highlightName) {
-    msg = '<p style="font-size:0.85rem;color:#5b8aa0">今回はランク外でした</p>';
-  }
-  let rows = '';
-  rankings.forEach((r, i) => {
-    const isMe = r.name === highlightName && r.secs === highlightSecs;
-    rows += '<tr' + (isMe ? ' class="my-rank"' : '') + '>' +
-      '<td>' + (medals[i] || (i+1)+'位') + '</td>' +
-      '<td>' + escapeHtml(r.name) + '</td>' +
-      '<td>' + secsToStr(r.secs) + '</td>' +
-      '<td>' + r.moves + '手</td></tr>';
-  });
-  $('ranking-display').innerHTML = msg +
-    '<table class="rank-table"><thead><tr><th>順位</th><th>名前</th><th>タイム</th><th>手数</th></tr></thead>' +
-    '<tbody>' + rows + '</tbody></table>';
-  $('ranking-input').style.display = 'none';
-  $('ranking-display').style.display = 'block';
-}
-
-function submitRanking() {
-  const name = $('player-name').value.trim();
-  if (!name) { $('player-name').focus(); return; }
-  const btn = $('submit-rank-btn');
-  btn.disabled = true; btn.textContent = '登録中...';
-
-  const entry = { name, secs: completionSecs, moves, ts: Date.now() };
-  const newKey = 'r' + Date.now() + '_' + Math.floor(Math.random() * 9999);
-  const existing = rankingsCache || [];
-  const all = [...existing, entry].sort((a, b) => a.secs - b.secs || a.moves - b.moves);
-  const updates = {};
-  updates['puzzles/' + currentPuzzleId + '/rankings/' + newKey] = entry;
-  all.slice(10).forEach(r => {
-    if (r.id) updates['puzzles/' + currentPuzzleId + '/rankings/' + r.id] = null;
-  });
-
-  db.ref().update(updates)
-    .then(() => showRankingDisplay(all.slice(0, 10), name, completionSecs))
-    .catch(() => {
-      btn.disabled = false; btn.textContent = '登録';
-      alert('登録に失敗しました');
-    });
-}
 
 // ── パズル共有（Firebase） ────────────────────
 
@@ -1069,16 +944,7 @@ $('shuffle-btn').addEventListener('click', () => {
   shuffleState(); resetStats(); renderBoard(false);
 });
 
-$('back-btn').addEventListener('click', () => {
-  stopTimer(); showScreen('screen-select');
-});
-
 $('save-photo-btn').addEventListener('click', savePhoto);
-$('submit-rank-btn').addEventListener('click', submitRanking);
-$('player-name').addEventListener('keydown', e => { if (e.key === 'Enter') submitRanking(); });
-$('skip-rank-btn').addEventListener('click', () => {
-  loadRankings().then(r => showRankingDisplay(r, null, null));
-});
 
 $('play-again-btn').addEventListener('click', () => {
   hideCelebration(); shuffleState(); resetStats(); renderBoard(false);
