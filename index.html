@@ -743,7 +743,7 @@ function submitRanking() {
       all.slice(10).forEach(r => {
         if (r.id) updates['puzzles/' + currentPuzzleId + '/rankings/' + r.id] = null;
       });
-      return db.ref().update(updates).then(() => all.slice(0, 10));
+      return db.ref().update(updates).then(() => loadRankings());
     })
     .then(rankings => showRankingDisplay(rankings, name, completionSecs))
     .catch(() => {
