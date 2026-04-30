@@ -583,10 +583,21 @@ function hideCelebration() {
 }
 
 function savePhoto() {
-  const a = document.createElement('a');
-  a.href = imageUrl;
-  a.download = 'photo.jpg';
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  fetch(imageUrl)
+    .then(r => r.blob())
+    .then(blob => {
+      const file = new File([blob], 'photo.jpg', { type: 'image/jpeg' });
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        return navigator.share({ files: [file], title: 'パズル完成！' });
+      }
+      throw new Error('fallback');
+    })
+    .catch(() => {
+      const a = document.createElement('a');
+      a.href = imageUrl;
+      a.download = 'photo.jpg';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    });
 }
 
 // ── コンフェッティ ────────────────────────────
