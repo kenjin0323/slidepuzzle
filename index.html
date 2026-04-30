@@ -466,6 +466,7 @@ let diffMode = 'play'; // 'play' | 'share'
 let currentShareUrl = '';
 let currentPuzzleId = null;
 let completionSecs = 0;
+let rankingsCache = null;
 
 // ── ユーティリティ ────────────────────────────
 const $ = id => document.getElementById(id);
@@ -616,6 +617,7 @@ function celebrate() {
     $('submit-rank-btn').textContent = '登録';
 
     loadRankings().then(rankings => {
+      rankingsCache = rankings;
       const worst = rankings[9];
       const qualifies = !worst ||
         completionSecs < worst.secs ||
@@ -625,6 +627,9 @@ function celebrate() {
       } else {
         showRankingDisplay(rankings, null, null);
       }
+    }).catch(() => {
+      rankingsCache = [];
+      $('ranking-input').style.display = 'block';
     });
   }
 }
@@ -632,6 +637,7 @@ function hideCelebration() {
   $('celebration').style.display = 'none';
   $('cel-photo').style.display = 'none';
   $('ranking-section').style.display = 'none';
+  rankingsCache = null;
   stopConfetti();
 }
 
@@ -734,18 +740,16 @@ function submitRanking() {
 
   const entry = { name, secs: completionSecs, moves, ts: Date.now() };
   const newKey = 'r' + Date.now() + '_' + Math.floor(Math.random() * 9999);
+  const existing = rankingsCache || [];
+  const all = [...existing, entry].sort((a, b) => a.secs - b.secs || a.moves - b.moves);
+  const updates = {};
+  updates['puzzles/' + currentPuzzleId + '/rankings/' + newKey] = entry;
+  all.slice(10).forEach(r => {
+    if (r.id) updates['puzzles/' + currentPuzzleId + '/rankings/' + r.id] = null;
+  });
 
-  loadRankings()
-    .then(existing => {
-      const all = [...existing, entry].sort((a, b) => a.secs - b.secs || a.moves - b.moves);
-      const updates = {};
-      updates['puzzles/' + currentPuzzleId + '/rankings/' + newKey] = entry;
-      all.slice(10).forEach(r => {
-        if (r.id) updates['puzzles/' + currentPuzzleId + '/rankings/' + r.id] = null;
-      });
-      return db.ref().update(updates).then(() => loadRankings());
-    })
-    .then(rankings => showRankingDisplay(rankings, name, completionSecs))
+  db.ref().update(updates)
+    .then(() => showRankingDisplay(all.slice(0, 10), name, completionSecs))
     .catch(() => {
       btn.disabled = false; btn.textContent = '登録';
       alert('登録に失敗しました');
