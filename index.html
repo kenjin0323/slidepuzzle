@@ -383,7 +383,6 @@ button:active { transform: translateY(0);  filter: brightness(0.94); }
     <div class="cel-buttons">
       <button type="button" class="btn-primary" id="save-photo-btn">⬇ 写真を保存</button>
       <button type="button" class="btn-success" id="play-again-btn">🔀 もう一度遊ぶ</button>
-      <button type="button" class="btn-dark"    id="new-photo-btn">📷 別の写真</button>
     </div>
   </div>
 </div>
@@ -952,12 +951,6 @@ $('play-again-btn').addEventListener('click', () => {
   hideCelebration(); shuffleState(); resetStats(); renderBoard(false);
 });
 
-$('new-photo-btn').addEventListener('click', () => {
-  hideCelebration(); stopTimer();
-  $('preview-area').style.display = 'none';
-  $('file-input').value = '';
-  showScreen('screen-select');
-});
 
 checkUrlParam();
 </script>
